@@ -27,7 +27,7 @@ if (-not (Test-Path $scriptPath) -or (Get-Item $scriptPath).Length -eq 0) {
     exit 1
 }
 
-# Prüfen ob Datei gültigen PowerShell-Inhalt hat
+# Prüfen ob Datei gültigen Inhalt hat
 $content = Get-Content $scriptPath -Raw
 if ($content -notmatch '(?i)#.*vfloader|Vodafone') {
     Write-Host "FEHLER: Unerwarteter Dateiinhalt - dies ist möglicherweise nicht das richtige Skript." -ForegroundColor Red
@@ -39,9 +39,14 @@ if ($content -notmatch '(?i)#.*vfloader|Vodafone') {
 # Ausgabe: Speicherort
 Write-Host "Gespeichert unter: $scriptPath" -ForegroundColor Green
 
-# Explorer öffnen mit markierter Datei
-explorer.exe /select, $scriptPath
+# Kurze Pause damit Windows den Pfad vollständig verarbeiten kann
+Start-Sleep -Milliseconds 500
 
-# Skript starten
-Write-Host "Starte vfloader..."
-& $scriptPath
+# Explorer öffnen mit markierter Datei
+explorer.exe /select,"$scriptPath"
+
+# Skript in einem neuen PowerShell-Prozess starten.
+# -ExecutionPolicy Bypass umgeht die systemweite Ausführungsrichtlinie (z.B. "Restricted" oder
+# "RemoteSigned"), die heruntergeladene Skripte blockieren würde — nur für diesen einen Prozess,
+# ohne systemweit etwas zu ändern. Keine Adminrechte erforderlich.
+PowerShell.exe -ExecutionPolicy Bypass -File $scriptPath
