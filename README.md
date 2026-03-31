@@ -27,7 +27,8 @@ Wenn du einen frischen Vodafone Vertrag hast und möglichst alle Vertragskosten 
 2. Android Gerät vorbereiten siehe Anleitung unten.
 3. Falls du mehr als eine SIM Karte in dem Gerät hast stelle sicher, dass nur die Vodafone SIM aktiviert ist, die mit CallYa Codes aufgeladen werden soll.
 4. Stelle sicher, dass das Gerät mindestens dauerhaft einen Balken Empfang hat.
-5. Fahre mit "Installation & Guthabeneinlösung" unten fort.
+5. Die Systemsprache des Geräte muss Deutsch sein.
+6Fahre mit "Installation & Guthabeneinlösung" unten fort.
 
 ### Android-Gerät vorbereiten
 1. USB-Debugging aktivieren (Einstellungen → Entwickleroptionen → USB-Debugging)
@@ -56,7 +57,7 @@ Keine Ahnung.
 
 **Woher bekommt man die Codes typischerweise rabattiert?**  
 * Wunschgutschein.de
-* Kaufland offline  
+* Kaufland offline
 
 **Gute Quellen für aktuelle Rabattaktionen:**  
 * MyDealz.de
@@ -87,3 +88,6 @@ Bildschirminhalt als XML auslesen:
 adb shell uiautomator dump /sdcard/screen.xml
 adb pull /sdcard/screen.xml
 ```
+
+## Ideen
+* Blablub

@@ -5,8 +5,7 @@
 # Ob die results.txt nach erfolgreichem Abschluss automatisch geoeffnet werden soll.
 $OPEN_RESULTS_ON_SUCCESS = $true
 
-# Ob die results.txt nach erfolgreichem Abschluss in die Zwischenablage kopiert werden soll.
-# Praktisch um Ergebnisse schnell weiterzuteilen, kann bei Bedarf deaktiviert werden.
+# Ob die Ergebnisse der aktuellen Session nach erfolgreichem Abschluss in die Zwischenablage kopiert werden soll.
 $COPY_RESULTS_TO_CLIPBOARD = $true
 
 # Maximale Wartezeit zwischen zwei Einloesungen in Sekunden.
@@ -225,19 +224,15 @@ if (-not $ADB) {
 
     if ($key.Character -eq "1") {
         Start-Process "https://www.xda-developers.com/install-adb-windows-macos-linux/"
-
         Write-Host ""
         Write-Host "Lade ADB herunter..."
-
         $zipUrl = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
         $zipPath = ".\platform-tools-latest-windows.zip"
-
         try {
             Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -ErrorAction Stop
             Write-Host "Download abgeschlossen. Entpacke..."
             Expand-Archive -Path $zipPath -DestinationPath "." -Force -ErrorAction Stop
             Remove-Item $zipPath -Force
-
             if (Test-Path ".\platform-tools\adb.exe") {
                 $ADB = ".\platform-tools\adb.exe"
                 Write-Success "ADB erfolgreich heruntergeladen: $ADB"
@@ -285,7 +280,6 @@ if ($DEBUG_REDEEM_CODES) {
     $remainingFromFile = @()
     if (Test-Path $REMAINING_FILE) {
         $remainingFromFile = @(Get-Content $REMAINING_FILE | Where-Object { Is-ValidCode $_.Trim() })
-
         if ($remainingFromFile.Count -eq 0) {
             Write-Host "remaining_codes.txt enthielt keine gueltigen Codes und wird geloescht."
             Remove-Item $REMAINING_FILE -Force
@@ -385,7 +379,7 @@ Ensure-Homescreen
 function Wait-CallEnd {
     $callState = (& $ADB shell dumpsys telephony.registry | Select-String "mCallState" | Select-Object -First 1) -replace ".*mCallState=(\d+).*", '$1'
     if ($callState -eq "2") {
-        Write-Host "  Aktiver Anruf erkannt - warte bis der Benutzer auflegt..."
+        Write-Host "  Aktiver Anruf laeuft - warte auf Beendigung..."
         $attempt = 0
         while ($true) {
             $callState = (& $ADB shell dumpsys telephony.registry | Select-String "mCallState" | Select-Object -First 1) -replace ".*mCallState=(\d+).*", '$1'
@@ -395,7 +389,7 @@ function Wait-CallEnd {
                 break
             }
             $attempt++
-            Write-Poll "  Warte auf Anrufende... (Versuch $attempt)"
+            Write-Poll "  Aktiver Anruf laeuft - warte auf Beendigung... (Versuch $attempt)"
             Start-Sleep -Milliseconds 500
         }
     } elseif ($callState -eq "1") {
@@ -516,12 +510,23 @@ if (-not (Test-Path $RESULTS_FILE)) {
     Write-Host "results.txt gefunden - Ergebnisse werden angehaengt."
 }
 
+# Zeitstempel dieser Session als Trennzeile in results.txt schreiben
+$sessionTimestamp = Get-Date -Format "dd.MM.yyyy HH:mm 'Uhr'"
+Add-Content $RESULTS_FILE ""
+Add-Content $RESULTS_FILE $sessionTimestamp
+
 # ============================================================
 # Hauptschleife
 # ============================================================
 $totalCodes = $CODES.Count
 $totalCollected = 0.0
 $lastDurationSecs = $DEFAULT_ETA_SECS
+
+# Sammelt nur die Ergebniszeilen der aktuellen Session fuer die Abschlussausgabe
+$sessionResults = @()
+
+# Gesamtdauer der Einloeseschleife messen
+$sessionStart = Get-Date
 
 for ($i = 0; $i -lt $totalCodes; $i++) {
     $CODE = $CODES[$i]
@@ -532,8 +537,10 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
     $remaining = $totalCodes - $i
     $eta = [math]::Round(($lastDurationSecs + $ETA_PAUSE_BUFFER_SECS) * $remaining)
     $collectedDisplay = "{0:F2}" -f $totalCollected
+    $elapsedSession = (Get-Date) - $sessionStart
+    $elapsedDisplay = "{0:mm\:ss}" -f ([datetime]::MinValue + $elapsedSession)
     Write-Host ""
-    Write-Host "=== Code $($i + 1)/$totalCodes | ETA ~$($eta)s | Bisher: $collectedDisplay EUR ==="
+    Write-Host "=== Code $($i + 1)/$totalCodes | ETA ~$($eta)s | Bisher: $collectedDisplay EUR | Zeit: $elapsedDisplay ==="
     Write-Host "    Code: $CODE"
 
     $redeemStart = Get-Date
@@ -555,6 +562,10 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
     $startTime = Get-Date
     $xml = ""
 
+    # Merkt ob Is-UssdExecuting schon einmal true war
+    # Sobald es danach false ist, ist der finale Dialog sicher sichtbar
+    $ussdWasExecuting = $false
+
     while ($true) {
         Wait-CallEnd
         Keep-ScreenAwake
@@ -564,11 +575,17 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
         $remainingSecs = [math]::Round($TIMEOUT_SECS - $elapsed.TotalSeconds)
 
         if ($xml -match "android:id/message") {
-            if (-not (Is-UssdExecuting -xml $xml)) {
+            if (Is-UssdExecuting -xml $xml) {
+                # USSD-Ladebildschirm laeuft noch
+                $ussdWasExecuting = $true
+                Write-Poll "  USSD wird ausgefuehrt... (noch max $remainingSecs s)"
+            } else {
+                # Kein Ladebildschirm mehr sichtbar:
+                # Entweder war der Ladebildschirm schon da und ist verschwunden (Dialog ist fertig),
+                # oder der Dialog ist direkt ohne Ladebildschirm erschienen
                 Write-PollDone
                 break
             }
-            Write-Poll "  USSD wird ausgefuehrt... (noch max $remainingSecs s)"
         } else {
             Write-Poll "  Warte auf Dialog... (noch max $remainingSecs s)"
         }
@@ -578,6 +595,7 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
             Write-Fail "  FEHLER: Kein Dialogfenster-Feedback gefunden innerhalb von $TIMEOUT_SECS Sekunden."
             Write-Host "  Bisherige Ergebnisse in: $RESULTS_FILE"
             "$CODE TIMEOUT" | Add-Content $RESULTS_FILE
+            $sessionResults += "$CODE TIMEOUT"
             Exit-WithKey
         }
 
@@ -597,20 +615,31 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
         $totalCollected += $amount
         $amountDisplay = "{0:F2}" -f $amount
         Write-Success "  Erfolgreich: $amountDisplay EUR"
-        "$CODE $amountDisplay EUR" | Add-Content $RESULTS_FILE
+        $line = "$CODE $amountDisplay EUR"
+        Add-Content $RESULTS_FILE $line
+        $sessionResults += $line
     } elseif ($result -eq "BEREITS_EINGELOEST") {
         Write-Warn "  Code bereits eingeloest"
-        "$CODE BEREITS_EINGELOEST" | Add-Content $RESULTS_FILE
+        $line = "$CODE BEREITS_EINGELOEST"
+        Add-Content $RESULTS_FILE $line
+        $sessionResults += $line
     } else {
+        # Unbekannter Status: Versuche Fehlermeldung aus dem Dialog zu extrahieren.
+        # screen_unknown_error.xml wird in beiden Faellen gespeichert
+        # um die Ursache spaeter analysieren zu koennen.
         Save-UnknownError
         $errorMsg = Extract-Message -xml $xml
         if ($errorMsg -ne "") {
             Write-Warn "  Fehler: $errorMsg"
-            "$CODE FEHLER: $errorMsg" | Add-Content $RESULTS_FILE
+            $line = "$CODE FEHLER: $errorMsg"
+            Add-Content $RESULTS_FILE $line
+            $sessionResults += $line
         } else {
             Write-Fail "  Unbekannte Antwort && Fehlermeldung konnte nicht geparsed werden - Abbruch!"
             Write-Host "  Bisherige Ergebnisse in: $RESULTS_FILE"
-            "$CODE UNBEKANNT" | Add-Content $RESULTS_FILE
+            $line = "$CODE UNBEKANNT"
+            Add-Content $RESULTS_FILE $line
+            $sessionResults += $line
             Exit-WithKey
         }
     }
@@ -649,28 +678,28 @@ if (-not $DEBUG_ENABLED) {
 }
 
 $totalDisplay = "{0:F2}" -f $totalCollected
-$results = Get-Content $RESULTS_FILE
-Write-Success "=== Alle $totalCodes Codes verarbeitet | Gesamt eingeloest: $totalDisplay EUR ==="
+$totalDuration = (Get-Date) - $sessionStart
+$totalDurationDisplay = "{0:mm\:ss}" -f ([datetime]::MinValue + $totalDuration)
+
+Write-Success "=== Alle $totalCodes Codes verarbeitet | Gesamt: $totalDisplay EUR | Dauer: $totalDurationDisplay ==="
 Write-Host ""
 
-# Hinweis falls die Datei bereits vorher existierte und Inhalte dazugeschrieben wurden
 if ($resultsExistedBefore) {
     Write-Info "Hinweis: Die results.txt existierte bereits vor diesem Durchlauf."
     Write-Info "Die neuen Ergebnisse wurden an den bestehenden Inhalt angehaengt."
     Write-Host ""
 }
 
-Write-Success "Inhalt der results.txt ($RESULTS_FILE):"
+Write-Success "Ergebnisse dieser Session:"
 Write-Host ""
-$results | ForEach-Object { Write-Success $_ }
+$sessionResults | ForEach-Object { Write-Success $_ }
 
 if ($COPY_RESULTS_TO_CLIPBOARD) {
-    $results | Set-Clipboard
+    $sessionResults | Set-Clipboard
     Write-Host ""
-    Write-Success "Inhalt der results.txt wurde in die Zwischenablage kopiert."
+    Write-Success "Ergebnisse dieser Session wurden in die Zwischenablage kopiert."
 }
 
-# results.txt automatisch oeffnen wenn konfiguriert
 $resolvedResultsPath = (Resolve-Path $RESULTS_FILE).Path
 if ($OPEN_RESULTS_ON_SUCCESS) {
     Start-Process $resolvedResultsPath
