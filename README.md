@@ -1,8 +1,9 @@
 # VodafoneLoader | VfLoader
-Automatisiertes Einlösen von Vodafone CallYa Aufladecodes über ADB (Android Debug Bridge).
+Automatisiertes Einlösen von Prepaid Aufladecodes z.B. Vodafone CallYa Codess über ADB (Android Debug Bridge).
 
 Das Script verbindet sich per USB mit einem Android-Gerät, sendet die USSD-Codes automatisch, liest die Antwort aus dem Dialog aus und speichert die Ergebnisse in einer Datei.  
-Es merkt sich den Fortschritt und fragt beim nächsten Start, ob es fortfahren soll.
+Es merkt sich den Fortschritt und fragt beim nächsten Start, ob es fortfahren soll.  
+Derzeit kann es nur Vodafone Codes einlösen, aber nach Feedback der Community werden auch andere Codeformate unterstützt.
 
 ---
 
@@ -23,12 +24,12 @@ Wenn du einen frischen Vodafone Vertrag hast und möglichst alle Vertragskosten 
 - Android Gerät mit ADB (Android Debug Bridge) – ADB wird beim ersten Start optional automatisch heruntergeladen
 
 ### Vorbereitungen
-1. Die 15-stelligen CallYa Aufladecodes zeilengetrennt in ein Textdokument speichern. Dieser zeitaufwändige Schritt wird in Zukunft evtl ebenfalls automatisiert.
+1. Die 15-stelligen Aufladecodes zeilengetrennt in ein Textdokument speichern. Dieser zeitaufwändige Schritt wird in Zukunft evtl ebenfalls automatisiert.
 2. Android Gerät vorbereiten siehe Anleitung unten.
-3. Falls du mehr als eine SIM Karte in dem Gerät hast stelle sicher, dass nur die Vodafone SIM aktiviert ist, die mit CallYa Codes aufgeladen werden soll.
+3. Falls du mehr als eine SIM Karte in dem Gerät hast stelle sicher, dass nur die SIM aktiviert ist, die mit Prepaidcodes aufgeladen werden soll.
 4. Stelle sicher, dass das Gerät mindestens dauerhaft einen Balken Empfang hat.
-5. Die Systemsprache des Geräte muss Deutsch sein.
-6Fahre mit "Installation & Guthabeneinlösung" unten fort.
+5. Die Systemsprache des Geräte sollte Deutsch sein.
+6. Fahre mit "Installation & Guthabeneinlösung" unten fort.
 
 ### Android-Gerät vorbereiten
 1. USB-Debugging aktivieren (Einstellungen → Entwickleroptionen → USB-Debugging)
@@ -90,4 +91,5 @@ adb pull /sdcard/screen.xml
 ```
 
 ## Ideen
-* Blablub
+* Sichergehen, dass jeder eingegebene Code bzw Code aus der Textdatei nur einmal in der Liste der Codes steht (Duplikate verhindern)
+* Random Wartezeit zwischen Einlösungen: Gerät aktiv halten, um Lockscreen wegen Inaktivität zu vermeiden

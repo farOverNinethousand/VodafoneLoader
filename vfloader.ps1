@@ -8,8 +8,12 @@ $OPEN_RESULTS_ON_SUCCESS = $true
 # Ob die Ergebnisse der aktuellen Session nach erfolgreichem Abschluss in die Zwischenablage kopiert werden soll.
 $COPY_RESULTS_TO_CLIPBOARD = $true
 
-# Maximale Wartezeit zwischen zwei Einloesungen in Sekunden.
-# Die tatsaechliche Wartezeit wird zufaellig zwischen 1 und diesem Wert gewaehlt.
+# Ob nach Abschluss eine Benachrichtigung auf dem Android-Geraet angezeigt werden soll.
+$SHOW_COMPLETION_NOTIFICATION_ON_ANDROID_DEVICE = $true
+
+# Minimale und maximale Wartezeit zwischen zwei Einloesungen in Sekunden.
+# Die tatsaechliche Wartezeit wird zufaellig zwischen diesen Werten gewaehlt.
+$MIN_WAIT_SECONDS_BETWEEN_CODES = 1
 $MAX_WAIT_SECONDS_BETWEEN_CODES = 10
 
 # Standardwert fuer ETA beim ersten Durchlauf (Sekunden)
@@ -402,6 +406,23 @@ function Keep-ScreenAwake {
     & $ADB shell input tap 1 1
 }
 
+function Wait-WithScreenAwake {
+    # Wartet die angegebene Anzahl Sekunden und haelt dabei den Bildschirm aktiv.
+    # Alle 2 Sekunden wird ein Tap gesendet, um den Lockscreen-Timer zurueckzusetzen.
+    param($seconds)
+    $elapsed = 0
+    $interval = 2
+    while ($elapsed -lt $seconds) {
+        $remaining = $seconds - $elapsed
+        Write-Poll "  Warte vor naechstem Code... (noch $remaining s)"
+        $sleepTime = [math]::Min($interval, $remaining)
+        Start-Sleep -Seconds $sleepTime
+        $elapsed += $sleepTime
+        Keep-ScreenAwake
+    }
+    Write-PollDone
+}
+
 function Parse-Result {
     # Wertet den Antworttext des USSD-Dialogs aus und gibt einen
     # strukturierten Status zurueck:
@@ -527,6 +548,9 @@ $sessionResults = @()
 
 # Gesamtdauer der Einloeseschleife messen
 $sessionStart = Get-Date
+
+# Offenen Dialog schliessen, falls vom letzten Mal noch einer offen sein sollte
+Close-DialogIfOpen
 
 for ($i = 0; $i -lt $totalCodes; $i++) {
     $CODE = $CODES[$i]
@@ -654,14 +678,8 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
     & $ADB shell rm -f /sdcard/screen.xml 2>$null
 
     if ($i -lt ($totalCodes - 1)) {
-        $wait = Get-Random -Minimum 1 -Maximum ($MAX_WAIT_SECONDS_BETWEEN_CODES + 1)
-        $waitCount = 0
-        while ($waitCount -lt $wait) {
-            Write-Poll "  Warte vor naechstem Code... (noch $($wait - $waitCount) s)"
-            Start-Sleep -Seconds 1
-            $waitCount++
-        }
-        Write-PollDone
+        $wait = Get-Random -Minimum $MIN_WAIT_SECONDS_BETWEEN_CODES -Maximum ($MAX_WAIT_SECONDS_BETWEEN_CODES + 1)
+        Wait-WithScreenAwake -seconds $wait
     }
 }
 
@@ -680,6 +698,13 @@ if (-not $DEBUG_ENABLED) {
 $totalDisplay = "{0:F2}" -f $totalCollected
 $totalDuration = (Get-Date) - $sessionStart
 $totalDurationDisplay = "{0:mm\:ss}" -f ([datetime]::MinValue + $totalDuration)
+
+# Info-Benachrichtigung auf dem Android-Geraet anzeigen
+# Hinweis: cmd notification post erfordert Android 7+ und zeigt eine persistente Benachrichtigung
+# (kein echter Dialog mit OK-Button via ADB ohne Custom-APK moeglich)
+if ($SHOW_COMPLETION_NOTIFICATION_ON_ANDROID_DEVICE) {
+    & $ADB shell "cmd notification post -S bigtext -t 'VfLoader' 'vfloader_done' $'Alle $totalCodes Codes abgearbeitet\n${totalDisplay}\u20ac eingelöst'" 2>$null
+}
 
 Write-Success "=== Alle $totalCodes Codes verarbeitet | Gesamt: $totalDisplay EUR | Dauer: $totalDurationDisplay ==="
 Write-Host ""
