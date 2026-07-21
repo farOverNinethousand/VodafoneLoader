@@ -11,7 +11,7 @@ $COPY_RESULTS_TO_CLIPBOARD = $true
 # Ob nach Abschluss eine Benachrichtigung auf dem Android-Geraet angezeigt werden soll.
 $SHOW_COMPLETION_NOTIFICATION_ON_ANDROID_DEVICE = $true
 
-# Minimale und maximale Wartezeit zwischen zwei Einloesungen in Sekunden.
+# Minimale und maximale Wartezeit zwischen zwei Aufladungen in Sekunden.
 # Die tatsaechliche Wartezeit wird zufaellig zwischen diesen Werten gewaehlt.
 $MIN_WAIT_SECONDS_BETWEEN_CODES = 1
 $MAX_WAIT_SECONDS_BETWEEN_CODES = 10
@@ -24,6 +24,7 @@ $ETA_PAUSE_BUFFER_SECS = 5
 
 $TIMEOUT_SECS = 60
 $RESULTS_FILE = ".\results.txt"
+$RESULTS_CSV_FILE = ".\results.csv"
 $REMAINING_FILE = ".\remaining_codes.txt"
 
 # ============================================================
@@ -33,9 +34,9 @@ $REMAINING_FILE = ".\remaining_codes.txt"
 # Debug-Flag: Aktiviert zusaetzliche Konsolenausgaben und speichert screen_debug.xml bei jedem UI-Dump
 $DEBUG_ENABLED = $false
 
-# Redeem-Command-Debug-Flag: Ersetzt den echten Einloese-Befehl durch eine harmlose Guthabenabfrage.
+# Redeem-Command-Debug-Flag: Ersetzt den echten Auflade-Befehl durch eine harmlose Guthabenabfrage.
 # WICHTIG: Auf $false setzen fuer echten Betrieb!
-# Hintergrund: Zu viele fehlgeschlagene Einloeseversuche koennen eine Vodafone-Sperre ausloesen.
+# Hintergrund: Zu viele fehlgeschlagene Aufladeversuche koennen eine Vodafone-Sperre ausloesen.
 $DEBUG_REDEEM_COMMAND = $false
 
 # Redeem-Codes-Debug-Flag: Verwendet hardcodierte Testcodes statt Benutzereingabe.
@@ -43,7 +44,7 @@ $DEBUG_REDEEM_COMMAND = $false
 $DEBUG_REDEEM_CODES = $false
 
 # Testcodes - nur verwendet wenn DEBUG_REDEEM_CODES aktiv ist
-# Vodafone Codes: beginnen immer mit 108, immer 15-stellig
+# Vodafone Codes: beginnen immer mit 1080, immer 15-stellig
 $DEBUG_CODES = @("108000000000001", "108000000000002", "108000000000003")
 
 # ============================================================
@@ -88,7 +89,53 @@ function Exit-WithKey {
 
 function Is-ValidCode {
     param($code)
-    return $code -match "^108\d{12}$"
+    return $code -match "^1080\d{11}$"
+}
+
+function ConvertTo-CsvField {
+    # Bettet ein Feld in Anfuehrungszeichen ein falls es Semikolon, Anfuehrungszeichen
+    # oder Zeilenumbrueche enthaelt (Standard-CSV-Escaping), damit die CSV auch bei
+    # Freitext (z.B. Fehlermeldungen) gueltig bleibt.
+    param($value)
+    if ($null -eq $value) { $value = "" }
+    $value = [string]$value
+    if ($value -match '[";\r\n]') {
+        $value = '"' + ($value -replace '"', '""') + '"'
+    }
+    return $value
+}
+
+function ConvertTo-AnsiCText {
+    # Wandelt alle Nicht-ASCII-Zeichen (z.B. Umlaute, Euro-Zeichen) in \uXXXX-Escapes um.
+    # Notwendig fuer Text der per "adb shell" als $'...'-String (ANSI-C-Quoting) an das
+    # Android-Geraet gesendet wird: rohe Nicht-ASCII-Zeichen werden je nach Konsolen-
+    # Codepage beim Aufruf von adb.exe verfaelscht, \uXXXX-Escapes werden dagegen erst
+    # von der Android-Shell selbst dekodiert und kommen daher immer korrekt an.
+    param($text)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $text.ToCharArray()) {
+        if ([int][char]$ch -gt 127) {
+            [void]$sb.Append(("\u{0:x4}" -f [int][char]$ch))
+        } else {
+            [void]$sb.Append($ch)
+        }
+    }
+    return $sb.ToString()
+}
+
+function Add-ResultCsvLine {
+    # Haengt eine Ergebniszeile an die results.csv an.
+    # Spalten: Code;Datum;Status;Wert;Meldung
+    param($code, $status, $wert, $meldung)
+    $timestamp = Get-Date -Format "dd.MM.yyyy HH:mm:ss"
+    $fields = @(
+        (ConvertTo-CsvField $code),
+        (ConvertTo-CsvField $timestamp),
+        (ConvertTo-CsvField $status),
+        (ConvertTo-CsvField $wert),
+        (ConvertTo-CsvField $meldung)
+    )
+    Add-Content $RESULTS_CSV_FILE ($fields -join ";")
 }
 
 function Is-OnHomescreen {
@@ -229,8 +276,9 @@ if (-not $ADB) {
     if ($key.Character -eq "1") {
         Start-Process "https://www.xda-developers.com/install-adb-windows-macos-linux/"
         Write-Host ""
-        Write-Host "Lade ADB herunter..."
         $zipUrl = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+        Write-Host "Lade ADB herunter (ca. 8MB, entpackt 16MB)..."
+        Write-Host "Downloadquelle: $zipUrl"
         $zipPath = ".\platform-tools-latest-windows.zip"
         try {
             Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -ErrorAction Stop
@@ -271,6 +319,18 @@ $deviceId = ($firstDevice -split "\t")[0].Trim()
 Write-Host "Verwende Geraet: $deviceId"
 
 # ============================================================
+# Hinweise vor der Codeeingabe
+# ============================================================
+Write-Host ""
+Write-Host "Bitte vor dem Fortfahren beachten:"
+Write-Host "  - Gehe sicher, dass du guten Empfang hast."
+Write-Host "  - Falls du ein Dual-SIM-Geraet hast, schalte nur die SIM-Karte ein, die aufgeladen werden soll."
+Write-Host "  - Die Systemsprache des Android-Geraets sollte Deutsch sein."
+Write-Host "  - Bediene das Geraet nicht waehrend der Aufladung."
+Write-Host ""
+Read-Host "Druecke Enter, um zur Codeeingabe zu gelangen"
+
+# ============================================================
 # Codes bestimmen
 # ============================================================
 $CODES = @()
@@ -292,10 +352,10 @@ if ($DEBUG_REDEEM_CODES) {
 
     if ($remainingFromFile.Count -gt 0) {
         Write-Host ""
-        Write-Warn "Es wurden $($remainingFromFile.Count) verbleibende Code(s) der letzten Einloesung in remaining_codes.txt gefunden:"
+        Write-Warn "Es wurden $($remainingFromFile.Count) verbleibende Code(s) der letzten Aufladung in remaining_codes.txt gefunden:"
         $remainingFromFile | ForEach-Object { Write-Host "  - $_" }
         Write-Host ""
-        Write-Host "  (1) Mit letztem Einloesesvorgang fortfahren"
+        Write-Host "  (1) Mit letztem Aufladevorgang fortfahren: verbleibende $($remainingFromFile.Count) Codes einloesen"
         Write-Host "  (2) Neue Codes eingeben"
         Write-Host "  (3) Script beenden"
         Write-Host ""
@@ -307,6 +367,7 @@ if ($DEBUG_REDEEM_CODES) {
                 Write-Host "Fahre mit $($CODES.Count) verbleibenden Code(s) fort."
                 break
             } elseif ($choice -eq "2") {
+                if (Test-Path $REMAINING_FILE) { Remove-Item $REMAINING_FILE -Force }
                 break
             } elseif ($choice -eq "3") {
                 Write-Host "Script wird beendet."
@@ -319,46 +380,52 @@ if ($DEBUG_REDEEM_CODES) {
 
     if ($CODES.Count -eq 0) {
         Write-Host ""
-        Write-Host "Bitte Vodafone Codes eingeben (15-stellig, beginnen mit 108)."
-        Write-Host "Codes zeilengetrennt einfuegen und dann 1-2x Enter druecken um die Einloesung zu starten."
+        Write-Host "Bitte Vodafone Codes eingeben (15-stellig, beginnen mit 1080)."
+        Write-Host "Codes zeilengetrennt einfuegen und dann 1-2x Enter druecken um die Aufladung zu starten."
         Write-Host ""
 
-        while ($true) {
-            $inputCodes = @()
-            $inputLines = @()
+        $inputCodes = @()
 
-            while ($true) {
+        while ($true) {
+            if ($inputCodes.Count -gt 0) {
+                $line = Read-Host "  Weitere Codes eingeben (bisher $($inputCodes.Count))"
+            } else {
                 $line = Read-Host "  Code(s) eingeben"
-                if ($line.Trim() -eq "") { break }
-                $inputLines += $line
             }
 
-            foreach ($inputLine in $inputLines) {
-                $tokens = $inputLine -split "\s+"
-                foreach ($token in $tokens) {
-                    $token = $token.Trim()
-                    if ($token -eq "") { continue }
-                    if (Is-ValidCode $token) {
-                        $inputCodes += $token
-                        Write-Success "  OK: $token hinzugefuegt."
-                    } else {
-                        Write-Warn "  Ignoriert (ungueltig): $token"
-                    }
+            if ($line.Trim() -eq "") {
+                if ($inputCodes.Count -gt 0) {
+                    break
+                } else {
+                    continue
                 }
             }
 
-            if ($inputCodes.Count -eq 0) {
-                Write-Warn "  Keine gueltigen Codes gefunden. Bitte mindestens einen gueltigen Code eingeben."
-                Write-Host "  (Codes muessen 15-stellig sein und mit 108 beginnen)"
-            } else {
-                $CODES = $inputCodes
-                break
+            $tokens = $line -split "\s+"
+            foreach ($token in $tokens) {
+                $token = $token.Trim()
+                if ($token -eq "") { continue }
+                if (Is-ValidCode $token) {
+                    if ($inputCodes -contains $token) {
+                        Write-Warn "  Duplikat ignoriert: $token"
+                    } else {
+                        $inputCodes += $token
+                        Write-Success "  OK: $token hinzugefuegt."
+                        if ($inputCodes.Count -eq 1) {
+                            Write-Host "  (Enter ohne Eingabe ein weiteres Mal druecken, um die Aufladung zu starten)"
+                        }
+                    }
+                } else {
+                    Write-Warn "  Ignoriert (ungueltig): $token"
+                }
             }
         }
+
+        $CODES = $inputCodes
     }
 
     Write-Host ""
-    Write-Host "$($CODES.Count) Code(s) werden eingeloest."
+    Write-Host "$($CODES.Count) Code(s) werden aufgeladen."
 }
 
 # ============================================================
@@ -373,7 +440,7 @@ if ($DEBUG_ENABLED) { Write-Host "Verbleibende Codes in remaining_codes.txt gesp
 Wait-DeviceUnlocked
 
 # ============================================================
-# Zum Homescreen navigieren vor der Einloeseschleife
+# Zum Homescreen navigieren vor der Aufladeschleife
 # ============================================================
 Ensure-Homescreen
 
@@ -426,15 +493,15 @@ function Wait-WithScreenAwake {
 function Parse-Result {
     # Wertet den Antworttext des USSD-Dialogs aus und gibt einen
     # strukturierten Status zurueck:
-    #   "OK:<betrag>"        -> Code erfolgreich eingeloest, Betrag als Dezimalzahl
-    #   "BEREITS_EINGELOEST" -> Code wurde schon verwendet
+    #   "OK:<betrag>"        -> Code erfolgreich aufgeladen, Betrag als Dezimalzahl
+    #   "BEREITS_AUFGELADEN" -> Code wurde schon verwendet
     #   "UNBEKANNT"          -> Antwort konnte keinem bekannten Status zugeordnet werden
     param($text)
     if ($text -match "(\d+[.,]\d{2})\s*EUR") {
         $amount = $matches[1] -replace ",", "."
         return "OK:$amount"
     } elseif ($text -match "schon verwendet|bereits.*verwendet|already used") {
-        return "BEREITS_EINGELOEST"
+        return "BEREITS_AUFGELADEN"
     } else {
         return "UNBEKANNT"
     }
@@ -508,15 +575,22 @@ function Save-UnknownError {
 }
 
 function Close-DialogIfOpen {
-    if ($DEBUG_ENABLED) { Write-Host "  [DEBUG] Sende ENTER (1. Versuch Dialog schliessen)" }
-    & $ADB shell input keyevent KEYCODE_ENTER
-    Start-Sleep -Milliseconds 500
-
-    $xml = Get-UIXml
-    if ($xml -match "android:id/message") {
-        if ($DEBUG_ENABLED) { Write-Host "  [DEBUG] Dialog noch offen - sende ENTER (2. Versuch)" }
-        & $ADB shell input keyevent KEYCODE_ENTER
-        Start-Sleep -Milliseconds 300
+    # Sendet KEYCODE_ENTER nur, wenn tatsaechlich ein Dialog gefunden wurde -
+    # ein blindes ENTER ohne offenen Dialog koennte auf dem Homescreen ein
+    # fokussiertes Icon/Widget ausloesen und versehentlich eine App oeffnen.
+    # Bis zu 2 Versuche: das erste ENTER markiert manchmal nur den Button
+    # (fokussiert ihn), ohne ihn tatsaechlich auszuloesen - erst ein zweites
+    # ENTER bestaetigt ihn dann wirklich.
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        $xml = Get-UIXml
+        if ($xml -match "android:id/message") {
+            if ($DEBUG_ENABLED) { Write-Host "  [DEBUG] Dialog gefunden - sende ENTER (Versuch $attempt)" }
+            & $ADB shell input keyevent KEYCODE_ENTER
+            Start-Sleep -Milliseconds 300
+        } else {
+            if ($DEBUG_ENABLED) { Write-Host "  [DEBUG] Kein Dialog gefunden - ENTER wird nicht gesendet (Versuch $attempt)" }
+            break
+        }
     }
 }
 
@@ -529,6 +603,13 @@ if (-not (Test-Path $RESULTS_FILE)) {
     Write-Host "results.txt neu erstellt."
 } else {
     Write-Host "results.txt gefunden - Ergebnisse werden angehaengt."
+}
+
+if (-not (Test-Path $RESULTS_CSV_FILE)) {
+    "Code;Datum;Status;Wert;Meldung" | Out-File $RESULTS_CSV_FILE -Encoding UTF8
+    Write-Host "results.csv neu erstellt."
+} else {
+    Write-Host "results.csv gefunden - Ergebnisse werden angehaengt."
 }
 
 # Zeitstempel dieser Session als Trennzeile in results.txt schreiben
@@ -546,7 +627,7 @@ $lastDurationSecs = $DEFAULT_ETA_SECS
 # Sammelt nur die Ergebniszeilen der aktuellen Session fuer die Abschlussausgabe
 $sessionResults = @()
 
-# Gesamtdauer der Einloeseschleife messen
+# Gesamtdauer der Aufladeschleife messen
 $sessionStart = Get-Date
 
 # Offenen Dialog schliessen, falls vom letzten Mal noch einer offen sein sollte
@@ -619,6 +700,7 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
             Write-Fail "  FEHLER: Kein Dialogfenster-Feedback gefunden innerhalb von $TIMEOUT_SECS Sekunden."
             Write-Host "  Bisherige Ergebnisse in: $RESULTS_FILE"
             "$CODE TIMEOUT" | Add-Content $RESULTS_FILE
+            Add-ResultCsvLine -code $CODE -status "TIMEOUT" -wert "" -meldung ""
             $sessionResults += "$CODE TIMEOUT"
             Exit-WithKey
         }
@@ -641,11 +723,13 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
         Write-Success "  Erfolgreich: $amountDisplay EUR"
         $line = "$CODE $amountDisplay EUR"
         Add-Content $RESULTS_FILE $line
+        Add-ResultCsvLine -code $CODE -status "OK" -wert $amountDisplay -meldung ""
         $sessionResults += $line
-    } elseif ($result -eq "BEREITS_EINGELOEST") {
-        Write-Warn "  Code bereits eingeloest"
-        $line = "$CODE BEREITS_EINGELOEST"
+    } elseif ($result -eq "BEREITS_AUFGELADEN") {
+        Write-Warn "  Code bereits aufgeladen"
+        $line = "$CODE BEREITS_AUFGELADEN"
         Add-Content $RESULTS_FILE $line
+        Add-ResultCsvLine -code $CODE -status "BEREITS_AUFGELADEN" -wert "" -meldung ""
         $sessionResults += $line
     } else {
         # Unbekannter Status: Versuche Fehlermeldung aus dem Dialog zu extrahieren.
@@ -657,12 +741,14 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
             Write-Warn "  Fehler: $errorMsg"
             $line = "$CODE FEHLER: $errorMsg"
             Add-Content $RESULTS_FILE $line
+            Add-ResultCsvLine -code $CODE -status "FEHLER" -wert "" -meldung $errorMsg
             $sessionResults += $line
         } else {
             Write-Fail "  Unbekannte Antwort && Fehlermeldung konnte nicht geparsed werden - Abbruch!"
             Write-Host "  Bisherige Ergebnisse in: $RESULTS_FILE"
             $line = "$CODE UNBEKANNT"
             Add-Content $RESULTS_FILE $line
+            Add-ResultCsvLine -code $CODE -status "UNBEKANNT" -wert "" -meldung ""
             $sessionResults += $line
             Exit-WithKey
         }
@@ -684,9 +770,7 @@ for ($i = 0; $i -lt $totalCodes; $i++) {
 }
 
 # Alle Codes verarbeitet - remaining_codes.txt loeschen
-if (Test-Path $REMAINING_FILE) {
-    Remove-Item $REMAINING_FILE -Force
-}
+Remove-Item $REMAINING_FILE -Force -ErrorAction SilentlyContinue
 
 # Clear-Host nur wenn DEBUG_ENABLED false ist.
 # Im Debug-Modus soll die vollstaendige Ausgabe sichtbar bleiben
@@ -703,7 +787,8 @@ $totalDurationDisplay = "{0:mm\:ss}" -f ([datetime]::MinValue + $totalDuration)
 # Hinweis: cmd notification post erfordert Android 7+ und zeigt eine persistente Benachrichtigung
 # (kein echter Dialog mit OK-Button via ADB ohne Custom-APK moeglich)
 if ($SHOW_COMPLETION_NOTIFICATION_ON_ANDROID_DEVICE) {
-    & $ADB shell "cmd notification post -S bigtext -t 'VfLoader' 'vfloader_done' $'Alle $totalCodes Codes abgearbeitet\n${totalDisplay}\u20ac eingelöst'" 2>$null
+    $notificationText = ConvertTo-AnsiCText "Alle $totalCodes Codes abgearbeitet\n${totalDisplay}$([char]0x20AC) aufgeladen"
+    & $ADB shell "cmd notification post -S bigtext -t 'VfLoader' 'vfloader_done' $'$notificationText'" 2>$null
 }
 
 Write-Success "=== Alle $totalCodes Codes verarbeitet | Gesamt: $totalDisplay EUR | Dauer: $totalDurationDisplay ==="
