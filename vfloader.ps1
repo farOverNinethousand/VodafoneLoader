@@ -128,8 +128,13 @@ function Add-ResultCsvLine {
     # Spalten: Code;Datum;Status;Wert;Meldung
     param($code, $status, $wert, $meldung)
     $timestamp = Get-Date -Format "dd.MM.yyyy HH:mm:ss"
+    # Code als Excel-Formel-Text erzwingen ("=""..."""), da Excel eine 15-stellige
+    # rein numerische Zeichenkette sonst als Zahl interpretiert - das fuehrt wegen
+    # der Gleitkomma-Praezision zu Rundungsfehlern in der letzten Stelle bzw. zu
+    # wissenschaftlicher Notation.
+    $codeField = '="' + ($code -replace '"', '""') + '"'
     $fields = @(
-        (ConvertTo-CsvField $code),
+        $codeField,
         (ConvertTo-CsvField $timestamp),
         (ConvertTo-CsvField $status),
         (ConvertTo-CsvField $wert),
