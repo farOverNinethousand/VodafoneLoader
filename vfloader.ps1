@@ -173,9 +173,9 @@ function Wait-DeviceReady {
         }
         $attempt++
         if ($rawList.Count -eq 0) {
-            Write-Poll "Kein Geraet verbunden - bitte Android-Geraet per USB anschliessen und USB-Debugging aktivieren... (Versuch $attempt)"
+            Write-Poll "Kein Geraet verbunden - Android-Geraet per USB anschliessen und USB-Debugging aktivieren... (Versuch $attempt)"
         } else {
-            Write-Poll "Geraet gefunden aber nicht autorisiert - bitte USB-Debugging auf dem Geraet bestaetigen... (Versuch $attempt)"
+            Write-Poll "Geraet gefunden aber nicht autorisiert - USB-Debugging auf dem Geraet bestaetigen... (Versuch $attempt)"
         }
         Start-Sleep -Seconds 3
     }
@@ -269,43 +269,50 @@ if (-not $ADB) {
     Write-Host "  EN: https://www.xda-developers.com/install-adb-windows-macos-linux/"
     Write-Host "  DE: https://support.isafe-mobile.com/de/support/solutions/articles/77000569929-wie-installiere-ich-adb-auf-meinem-pc-"
     Write-Host ""
-    Write-Host "  (1) ADB automatisch herunterladen und verwenden"
+    Write-Host "  (1) " -NoNewline
+    Write-Success "ADB automatisch herunterladen und verwenden"
     Write-Host "      Hinweis: ADB muss auf deinem Handy weiterhin manuell eingerichtet werden"
     Write-Host "      (siehe Anleitung oben). Die englische Anleitung wird im Browser geoeffnet."
     Write-Host "  (2) Hilfeartikel im Browser oeffnen und Script beenden"
-    Write-Host "  (beliebige Taste) Script beenden"
+    Write-Host "      Starte das Script erneut, sobald du ADB installiert hast."
+    Write-Host "  (0) Script beenden"
     Write-Host ""
 
-    $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    while ($true) {
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
-    if ($key.Character -eq "1") {
-        Start-Process "https://www.xda-developers.com/install-adb-windows-macos-linux/"
-        Write-Host ""
-        $zipUrl = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
-        Write-Host "Lade ADB herunter (ca. 8MB, entpackt 16MB)..."
-        Write-Host "Downloadquelle: $zipUrl"
-        $zipPath = ".\platform-tools-latest-windows.zip"
-        try {
-            Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -ErrorAction Stop
-            Write-Host "Download abgeschlossen. Entpacke..."
-            Expand-Archive -Path $zipPath -DestinationPath "." -Force -ErrorAction Stop
-            Remove-Item $zipPath -Force
-            if (Test-Path ".\platform-tools\adb.exe") {
-                $ADB = ".\platform-tools\adb.exe"
-                Write-Success "ADB erfolgreich heruntergeladen: $ADB"
-            } else {
-                Write-Fail "FEHLER: ADB konnte nach dem Entpacken nicht gefunden werden."
+        if ($key.Character -eq "1") {
+            Start-Process "https://www.xda-developers.com/install-adb-windows-macos-linux/"
+            Write-Host ""
+            $zipUrl = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+            Write-Host "Lade ADB herunter (ca. 8MB, entpackt 16MB)..."
+            Write-Host "Downloadquelle: $zipUrl"
+            $zipPath = ".\platform-tools-latest-windows.zip"
+            try {
+                Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -ErrorAction Stop
+                Write-Host "Download abgeschlossen. Entpacke..."
+                Expand-Archive -Path $zipPath -DestinationPath "." -Force -ErrorAction Stop
+                Remove-Item $zipPath -Force
+                if (Test-Path ".\platform-tools\adb.exe") {
+                    $ADB = ".\platform-tools\adb.exe"
+                    Write-Success "ADB erfolgreich heruntergeladen: $ADB"
+                } else {
+                    Write-Fail "FEHLER: ADB konnte nach dem Entpacken nicht gefunden werden."
+                    Exit-WithKey
+                }
+            } catch {
+                Write-Fail "FEHLER beim Herunterladen oder Entpacken: $_"
                 Exit-WithKey
             }
-        } catch {
-            Write-Fail "FEHLER beim Herunterladen oder Entpacken: $_"
-            Exit-WithKey
+            break
+        } elseif ($key.Character -eq "2") {
+            Start-Process "https://www.xda-developers.com/install-adb-windows-macos-linux/"
+            exit
+        } elseif ($key.Character -eq "0") {
+            exit
+        } else {
+            Write-Warn "  Bitte 0, 1 oder 2 eingeben."
         }
-    } elseif ($key.Character -eq "2") {
-        Start-Process "https://www.xda-developers.com/install-adb-windows-macos-linux/"
-        exit
-    } else {
-        exit
     }
 }
 
