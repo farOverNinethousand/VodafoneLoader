@@ -1,5 +1,5 @@
 # VodafoneLoader | VfLoader
-Automatisiertes Aufladen von Prepaid Aufladecodes z.B. Vodafone CallYa Codess über ADB (Android Debug Bridge).
+Automatisiertes Aufladen von Prepaid Aufladecodes z.B. Vodafone CallYa Codes über ADB (Android Debug Bridge).
 
 Das Script verbindet sich per USB mit einem Android-Gerät, sendet die USSD-Codes automatisch, liest die Antwort aus dem Dialog aus und speichert die Ergebnisse in einer Datei.  
 Es merkt sich den Fortschritt und fragt beim nächsten Start, ob es fortfahren soll.  
