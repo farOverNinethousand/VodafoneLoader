@@ -12,7 +12,7 @@ Vodafone erlaubt es, auch Laufzeitverträge mit CallYa "Prepaid" Codes aufzulade
 Diese Codes gibt es immer mal wieder rabattiert.  
 Mehr Infos dazu:  
 https://www.handyhase.de/magazin/vodafone-vertrag-guthaben-bezahlen/  
-https://www.mydealz.de/diskussion/kaufland-vodafone-guthaben-ean-2323482
+https://www.mydealz.de/diskussion/kaufland-vodafone-guthaben-ean-2323482  
 Leider ist der Aufladeprozess zeitaufwändig und man bekommt oft nur Codes in den Wertstufen 15€ oder 25€ d.h. am Ende braucht man sehr viele Codes.  
 Dieses Projekt soll die Aufladung mehrerer solcher Codes vereinfachen.  
 Wenn du einen frischen Vodafone Vertrag hast und möglichst alle Vertragskosten mit Guthaben bezahlen möchtest empfielt es sich, mindestens 120€ aufzuladen, sobald man die (s)SIM Karte erhält.
@@ -52,7 +52,8 @@ Der Fortschritt wird gespeichert.
 
 ## FAQ  
 **Wie viele Codes kann man pro Tag aufladen?**  
-Keine Ahnung.
+Keine Ahnung.  
+Getestet habe ich bis zu 200€ (Juli 2026).
 
 **Woher bekommt man die Codes typischerweise rabattiert?**  
 * Wunschgutschein.de
@@ -64,23 +65,28 @@ Keine Ahnung.
 
 ## Links und sonstiger Kram
 Testcodes:
-`108000000000001
+```
+108000000000001  
 108000000000002
-108000000000003`
+108000000000003
+```
 
 USSD Codes Infos:  
 https://www.handyhase.de/magazin/vodafone-ussd-codes/
 
-Haupt-Commands:
+Hauptsächlich verwendete ADB Kommandos:
 
 Guthaben abfragen:  
-`adb shell am start -a android.intent.action.CALL -d tel:*100*%23`
+`adb shell am start -a android.intent.action.CALL -d tel:*100*108000000000001%23`
 
-Vf Code aufladen:  
+Prepaid Code aufladen:  
 `adb shell am start -a android.intent.action.CALL -d tel:*100*108000000000001%23`
 
 ENTER drücken:  
 `adb shell input keyevent KEYCODE_ENTER`
+
+Auf den oberen Bildschirmrand tippen, um den Lockscreen zu vermeiden:  
+`adb shell input tap 1 1`
 
 Bildschirminhalt als XML auslesen:  
 ```
@@ -89,4 +95,4 @@ adb pull /sdcard/screen.xml
 ```
 
 ## Ideen
-* Random Wartezeit zwischen Aufladungen: Gerät aktiv halten, um Lockscreen wegen Inaktivität zu vermeiden
+* Andere Prepaidcodes erlauben, sofern User das möchten (Validierung dazu müsste eingebaut werden)
